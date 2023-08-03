@@ -1,3 +1,9 @@
+Version 1.0.9
+=============
+
+- Updated crates.io metadata
+
+
 Version 1.0.8
 =============
 
