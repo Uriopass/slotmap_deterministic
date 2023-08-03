@@ -1,7 +1,19 @@
+Version 1.0.8
+=============
+
+- Upgrade to 2021 edition
+
+
+Version 1.0.7
+=============
+
+- Removed build.rs to gain 1 dep
+
+
 Version 1.0.6
 =============
 
- - Made Key trait unsafe, as it was erroneously safe to implement. 
+ - Made Key trait unsafe, as it was erroneously safe to implement.
 
 
 Version 1.0.5

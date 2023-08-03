@@ -1,7 +1,7 @@
 [package]
 name = "slotmapd"
-version = "1.0.7"  # Remember to grep and update version everywhere.
-edition = "2018"
+version = "1.0.8"  # Remember to grep and update version everywhere.
+edition = "2021"
 authors = ["Orson Peters <orsonpeters@gmail.com>", "Paris Douady <paris.douady@hotmail.fr>"]
 description = "orlp/slotmap fork where serialization cycle doesn't change observable behavior"
 license = "Zlib"
