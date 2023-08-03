@@ -1,4 +1,10 @@
-# slotmap
+# Fork
+
+This is a fork of [orlp/slotmap](https://crates.io/crates/slotmap) where going through a serialization cycle doesn't change observable behavior (such as new key values or iteration order).
+
+**Please use the original library if you do not need this invariant as this fork will not be as maintained.**
+
+# slotmap_deterministic
 
 A Rust library providing three containers with persistent unique keys to access
 stored values, `SlotMap`, `HopSlotMap` and `DenseSlotMap`. Upon insertion a key
@@ -23,7 +29,7 @@ slotmap = "1.0"
 A short example:
 
 ```rust
-use slotmap::{SlotMap, SecondaryMap};
+use slotmapd::{SlotMap, SecondaryMap};
 
 let mut sm = SlotMap::new();
 let foo = sm.insert("foo");  // Key generated on insert.

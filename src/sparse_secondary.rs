@@ -1,11 +1,9 @@
 //! Contains the sparse secondary map implementation.
 
-#[cfg(all(nightly, any(doc, feature = "unstable")))]
-use alloc::collections::TryReserveError;
 #[allow(unused_imports)] // MaybeUninit is only used on nightly at the moment.
 use core::mem::MaybeUninit;
-use std::collections::hash_map::{self, HashMap};
-use std::hash;
+use std::collections::btree_map::{self, BTreeMap};
+
 use std::iter::{Extend, FromIterator, FusedIterator};
 use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
@@ -14,6 +12,7 @@ use super::{Key, KeyData};
 use crate::util::{is_older_version, UnwrapUnchecked};
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct Slot<T> {
     version: u32,
     value: T,
@@ -35,7 +34,7 @@ struct Slot<T> {
 /// an insertion has happened!
 ///
 /// Unlike [`SecondaryMap`], the [`SparseSecondaryMap`] is backed by a
-/// [`HashMap`]. This means its access times are higher, but it uses less memory
+/// [`BTreeMap`]. This means its access times are higher, but it uses less memory
 /// and iterates faster if there are only a few elements of the slot map in the
 /// secondary map. If most or all of the elements in a slot map are also found
 /// in the secondary map, use a [`SecondaryMap`] instead.
@@ -44,12 +43,12 @@ struct Slot<T> {
 /// thus not available in `no_std` environments.
 ///
 /// [`SecondaryMap`]: crate::SecondaryMap
-/// [`HashMap`]: std::collections::HashMap
+/// [`BTreeMap`]: std::collections::BTreeMap
 ///
 /// Example usage:
 ///
 /// ```
-/// # use slotmap::*;
+/// # use slotmapd::*;
 /// let mut players = SlotMap::new();
 /// let mut health = SparseSecondaryMap::new();
 /// let mut ammo = SparseSecondaryMap::new();
@@ -68,96 +67,36 @@ struct Slot<T> {
 /// ```
 
 #[derive(Debug, Clone)]
-pub struct SparseSecondaryMap<K: Key, V, S: hash::BuildHasher = hash_map::RandomState> {
-    slots: HashMap<u32, Slot<V>, S>,
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct SparseSecondaryMap<K: Key, V> {
+    slots: BTreeMap<u32, Slot<V>>,
     _k: PhantomData<fn(K) -> K>,
 }
 
-impl<K: Key, V> SparseSecondaryMap<K, V, hash_map::RandomState> {
+impl<K: Key, V> SparseSecondaryMap<K, V> {
     /// Constructs a new, empty [`SparseSecondaryMap`].
     ///
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sec: SparseSecondaryMap<DefaultKey, i32> = SparseSecondaryMap::new();
     /// ```
     pub fn new() -> Self {
-        Self::with_capacity(0)
-    }
-
-    /// Creates an empty [`SparseSecondaryMap`] with the given capacity of slots.
-    ///
-    /// The secondary map will not reallocate until it holds at least `capacity`
-    /// slots.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use slotmap::*;
-    /// let mut sm: SlotMap<_, i32> = SlotMap::with_capacity(10);
-    /// let mut sec: SparseSecondaryMap<DefaultKey, i32> =
-    ///     SparseSecondaryMap::with_capacity(sm.capacity());
-    /// ```
-    pub fn with_capacity(capacity: usize) -> Self {
         Self {
-            slots: HashMap::with_capacity(capacity),
-            _k: PhantomData,
+            slots: BTreeMap::new(),
+            _k: Default::default(),
         }
     }
 }
 
-impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
-    /// Creates an empty [`SparseSecondaryMap`] which will use the given hash
-    /// builder to hash keys.
-    ///
-    /// The secondary map will not reallocate until it holds at least `capacity`
-    /// slots.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use std::collections::hash_map::RandomState;
-    /// # use slotmap::*;
-    /// let mut sm: SlotMap<_, i32> = SlotMap::with_capacity(10);
-    /// let mut sec: SparseSecondaryMap<DefaultKey, i32, _> =
-    ///     SparseSecondaryMap::with_hasher(RandomState::new());
-    /// ```
-    pub fn with_hasher(hash_builder: S) -> Self {
-        Self {
-            slots: HashMap::with_hasher(hash_builder),
-            _k: PhantomData,
-        }
-    }
-
-    /// Creates an empty [`SparseSecondaryMap`] with the given capacity of slots,
-    /// using `hash_builder` to hash the keys.
-    ///
-    /// The secondary map will not reallocate until it holds at least `capacity`
-    /// slots.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use std::collections::hash_map::RandomState;
-    /// # use slotmap::*;
-    /// let mut sm: SlotMap<_, i32> = SlotMap::with_capacity(10);
-    /// let mut sec: SparseSecondaryMap<DefaultKey, i32, _> =
-    ///     SparseSecondaryMap::with_capacity_and_hasher(10, RandomState::new());
-    /// ```
-    pub fn with_capacity_and_hasher(capacity: usize, hash_builder: S) -> Self {
-        Self {
-            slots: HashMap::with_capacity_and_hasher(capacity, hash_builder),
-            _k: PhantomData,
-        }
-    }
-
+impl<K: Key, V> SparseSecondaryMap<K, V> {
     /// Returns the number of elements in the secondary map.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let k = sm.insert(4);
     /// let mut squared = SparseSecondaryMap::new();
@@ -174,7 +113,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sec: SparseSecondaryMap<DefaultKey, i32> = SparseSecondaryMap::new();
     /// assert!(sec.is_empty());
     /// ```
@@ -182,64 +121,12 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
         self.slots.is_empty()
     }
 
-    /// Returns the number of elements the [`SparseSecondaryMap`] can hold without
-    /// reallocating.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use slotmap::*;
-    /// let mut sec: SparseSecondaryMap<DefaultKey, i32> = SparseSecondaryMap::with_capacity(10);
-    /// assert!(sec.capacity() >= 10);
-    /// ```
-    pub fn capacity(&self) -> usize {
-        self.slots.capacity()
-    }
-
-    /// Reserves capacity for at least `additional` more slots in the
-    /// [`SparseSecondaryMap`]. The collection may reserve more space to avoid
-    /// frequent reallocations.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the new allocation size overflows [`usize`].
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use slotmap::*;
-    /// let mut sec: SparseSecondaryMap<DefaultKey, i32> = SparseSecondaryMap::new();
-    /// sec.reserve(10);
-    /// assert!(sec.capacity() >= 10);
-    /// ```
-    pub fn reserve(&mut self, additional: usize) {
-        self.slots.reserve(additional);
-    }
-
-    /// Tries to reserve capacity for at least `additional` more slots in the
-    /// [`SparseSecondaryMap`].  The collection may reserve more space to avoid
-    /// frequent reallocations.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use slotmap::*;
-    /// let mut sec: SparseSecondaryMap<DefaultKey, i32> = SparseSecondaryMap::new();
-    /// sec.try_reserve(10).unwrap();
-    /// assert!(sec.capacity() >= 10);
-    /// ```
-    #[cfg(all(nightly, any(doc, feature = "unstable")))]
-    #[cfg_attr(all(nightly, doc), doc(cfg(feature = "unstable")))]
-    pub fn try_reserve(&mut self, additional: usize) -> Result<(), TryReserveError> {
-        self.slots.try_reserve(additional)
-    }
-
     /// Returns [`true`] if the secondary map contains `key`.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let k = sm.insert(4);
     /// let mut squared = SparseSecondaryMap::new();
@@ -261,7 +148,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let k = sm.insert(4);
     /// let mut squared = SparseSecondaryMap::new();
@@ -312,7 +199,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut squared = SparseSecondaryMap::new();
     /// let k = sm.insert(4);
@@ -333,7 +220,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     pub fn remove(&mut self, key: K) -> Option<V> {
         let kd = key.data();
 
-        if let hash_map::Entry::Occupied(entry) = self.slots.entry(kd.idx) {
+        if let btree_map::Entry::Occupied(entry) = self.slots.entry(kd.idx) {
             if entry.get().version == kd.version.get() {
                 return Some(entry.remove_entry().1.value);
             }
@@ -350,7 +237,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -381,7 +268,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     /// for i in 0..10 {
@@ -395,40 +282,12 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
         self.slots.clear();
     }
 
-    /// Clears the slot map, returning all key-value pairs in arbitrary order as
-    /// an iterator. Keeps the allocated memory for reuse.
-    ///
-    /// When the iterator is dropped all elements in the slot map are removed,
-    /// even if the iterator was not fully consumed. If the iterator is not
-    /// dropped (using e.g. [`std::mem::forget`]), only the elements that were
-    /// iterated over are removed.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use slotmap::*;
-    /// # use std::iter::FromIterator;
-    /// let mut sm = SlotMap::new();
-    /// let k = sm.insert(0);
-    /// let mut sec = SparseSecondaryMap::new();
-    /// sec.insert(k, 1);
-    /// let v: Vec<_> = sec.drain().collect();
-    /// assert_eq!(sec.len(), 0);
-    /// assert_eq!(v, vec![(k, 1)]);
-    /// ```
-    pub fn drain(&mut self) -> Drain<K, V> {
-        Drain {
-            inner: self.slots.drain(),
-            _k: PhantomData,
-        }
-    }
-
     /// Returns a reference to the value corresponding to the key.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let key = sm.insert("foo");
     /// let mut sec = SparseSecondaryMap::new();
@@ -456,7 +315,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let key = sm.insert("foo");
     /// let mut sec = SparseSecondaryMap::new();
@@ -475,7 +334,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let key = sm.insert("test");
     /// let mut sec = SparseSecondaryMap::new();
@@ -504,7 +363,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let key = sm.insert("foo");
     /// let mut sec = SparseSecondaryMap::new();
@@ -527,7 +386,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     /// let ka = sm.insert(()); sec.insert(ka, "butter");
@@ -599,7 +458,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     /// let ka = sm.insert(()); sec.insert(ka, "butter");
@@ -631,7 +490,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     /// let k0 = sm.insert(0); sec.insert(k0, 10);
@@ -659,7 +518,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     /// let k0 = sm.insert(1); sec.insert(k0, 10);
@@ -692,7 +551,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// # use std::collections::HashSet;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
@@ -716,7 +575,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// # use std::collections::HashSet;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
@@ -740,7 +599,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// # use std::collections::HashSet;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
@@ -765,7 +624,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     /// let k = sm.insert(1);
@@ -781,7 +640,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
 
         // Until we can map an OccupiedEntry to a VacantEntry I don't think
         // there is a way to avoid this extra lookup.
-        if let hash_map::Entry::Occupied(o) = self.slots.entry(kd.idx) {
+        if let btree_map::Entry::Occupied(o) = self.slots.entry(kd.idx) {
             if o.get().version != kd.version.get() {
                 // Which is outdated, our key or the slot?
                 if is_older_version(o.get().version, kd.version.get()) {
@@ -793,7 +652,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
         }
 
         Some(match self.slots.entry(kd.idx) {
-            hash_map::Entry::Occupied(inner) => {
+            btree_map::Entry::Occupied(inner) => {
                 // We know for certain that this entry's key matches ours due
                 // to the previous if block.
                 Entry::Occupied(OccupiedEntry {
@@ -802,7 +661,7 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
                     _k: PhantomData,
                 })
             },
-            hash_map::Entry::Vacant(inner) => Entry::Vacant(VacantEntry {
+            btree_map::Entry::Vacant(inner) => Entry::Vacant(VacantEntry {
                 inner,
                 kd,
                 _k: PhantomData,
@@ -811,20 +670,18 @@ impl<K: Key, V, S: hash::BuildHasher> SparseSecondaryMap<K, V, S> {
     }
 }
 
-impl<K, V, S> Default for SparseSecondaryMap<K, V, S>
+impl<K, V> Default for SparseSecondaryMap<K, V>
 where
     K: Key,
-    S: hash::BuildHasher + Default,
 {
     fn default() -> Self {
-        Self::with_hasher(Default::default())
+        Self::new()
     }
 }
 
-impl<K, V, S> Index<K> for SparseSecondaryMap<K, V, S>
+impl<K, V> Index<K> for SparseSecondaryMap<K, V>
 where
     K: Key,
-    S: hash::BuildHasher,
 {
     type Output = V;
 
@@ -836,10 +693,9 @@ where
     }
 }
 
-impl<K, V, S> IndexMut<K> for SparseSecondaryMap<K, V, S>
+impl<K, V> IndexMut<K> for SparseSecondaryMap<K, V>
 where
     K: Key,
-    S: hash::BuildHasher,
 {
     fn index_mut(&mut self, key: K) -> &mut V {
         match self.get_mut(key) {
@@ -849,11 +705,10 @@ where
     }
 }
 
-impl<K, V, S> PartialEq for SparseSecondaryMap<K, V, S>
+impl<K, V> PartialEq for SparseSecondaryMap<K, V>
 where
     K: Key,
     V: PartialEq,
-    S: hash::BuildHasher,
 {
     fn eq(&self, other: &Self) -> bool {
         if self.len() != other.len() {
@@ -865,18 +720,16 @@ where
     }
 }
 
-impl<K, V, S> Eq for SparseSecondaryMap<K, V, S>
+impl<K, V> Eq for SparseSecondaryMap<K, V>
 where
     K: Key,
     V: Eq,
-    S: hash::BuildHasher,
 {
 }
 
-impl<K, V, S> FromIterator<(K, V)> for SparseSecondaryMap<K, V, S>
+impl<K, V> FromIterator<(K, V)> for SparseSecondaryMap<K, V>
 where
     K: Key,
-    S: hash::BuildHasher + Default,
 {
     fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
         let mut sec = Self::default();
@@ -885,10 +738,9 @@ where
     }
 }
 
-impl<K, V, S> Extend<(K, V)> for SparseSecondaryMap<K, V, S>
+impl<K, V> Extend<(K, V)> for SparseSecondaryMap<K, V>
 where
     K: Key,
-    S: hash::BuildHasher,
 {
     fn extend<I: IntoIterator<Item = (K, V)>>(&mut self, iter: I) {
         let iter = iter.into_iter();
@@ -898,11 +750,10 @@ where
     }
 }
 
-impl<'a, K, V, S> Extend<(K, &'a V)> for SparseSecondaryMap<K, V, S>
+impl<'a, K, V> Extend<(K, &'a V)> for SparseSecondaryMap<K, V>
 where
     K: Key,
     V: 'a + Copy,
-    S: hash::BuildHasher,
 {
     fn extend<I: IntoIterator<Item = (K, &'a V)>>(&mut self, iter: I) {
         let iter = iter.into_iter();
@@ -916,7 +767,7 @@ where
 /// [`Entry`] enum.
 #[derive(Debug)]
 pub struct OccupiedEntry<'a, K: Key, V> {
-    inner: hash_map::OccupiedEntry<'a, u32, Slot<V>>,
+    inner: btree_map::OccupiedEntry<'a, u32, Slot<V>>,
     kd: KeyData,
     _k: PhantomData<fn(K) -> K>,
 }
@@ -925,7 +776,7 @@ pub struct OccupiedEntry<'a, K: Key, V> {
 /// [`Entry`] enum.
 #[derive(Debug)]
 pub struct VacantEntry<'a, K: Key, V> {
-    inner: hash_map::VacantEntry<'a, u32, Slot<V>>,
+    inner: btree_map::VacantEntry<'a, u32, Slot<V>>,
     kd: KeyData,
     _k: PhantomData<fn(K) -> K>,
 }
@@ -950,7 +801,7 @@ impl<'a, K: Key, V> Entry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -971,7 +822,7 @@ impl<'a, K: Key, V> Entry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -991,7 +842,7 @@ impl<'a, K: Key, V> Entry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec: SparseSecondaryMap<_, ()> = SparseSecondaryMap::new();
     ///
@@ -1012,7 +863,7 @@ impl<'a, K: Key, V> Entry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -1043,7 +894,7 @@ impl<'a, K: Key, V: Default> Entry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec: SparseSecondaryMap<_, Option<i32>> = SparseSecondaryMap::new();
     ///
@@ -1062,7 +913,7 @@ impl<'a, K: Key, V> OccupiedEntry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -1079,8 +930,8 @@ impl<'a, K: Key, V> OccupiedEntry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
-    /// # use slotmap::sparse_secondary::Entry;
+    /// # use slotmapd::*;
+    /// # use slotmapd::sparse_secondary::Entry;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -1101,8 +952,8 @@ impl<'a, K: Key, V> OccupiedEntry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
-    /// # use slotmap::sparse_secondary::Entry;
+    /// # use slotmapd::*;
+    /// # use slotmapd::sparse_secondary::Entry;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -1125,8 +976,8 @@ impl<'a, K: Key, V> OccupiedEntry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
-    /// # use slotmap::sparse_secondary::Entry;
+    /// # use slotmapd::*;
+    /// # use slotmapd::sparse_secondary::Entry;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -1152,8 +1003,8 @@ impl<'a, K: Key, V> OccupiedEntry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
-    /// # use slotmap::sparse_secondary::Entry;
+    /// # use slotmapd::*;
+    /// # use slotmapd::sparse_secondary::Entry;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -1180,8 +1031,8 @@ impl<'a, K: Key, V> OccupiedEntry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
-    /// # use slotmap::sparse_secondary::Entry;
+    /// # use slotmapd::*;
+    /// # use slotmapd::sparse_secondary::Entry;
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
     ///
@@ -1203,8 +1054,8 @@ impl<'a, K: Key, V> OccupiedEntry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
-    /// # use slotmap::sparse_secondary::Entry;
+    /// # use slotmapd::*;
+    /// # use slotmapd::sparse_secondary::Entry;
     ///
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
@@ -1229,8 +1080,8 @@ impl<'a, K: Key, V> VacantEntry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
-    /// # use slotmap::sparse_secondary::Entry;
+    /// # use slotmapd::*;
+    /// # use slotmapd::sparse_secondary::Entry;
     ///
     /// let mut sm = SlotMap::new();
     /// let mut sec: SparseSecondaryMap<_, ()> = SparseSecondaryMap::new();
@@ -1251,8 +1102,8 @@ impl<'a, K: Key, V> VacantEntry<'a, K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
-    /// # use slotmap::sparse_secondary::Entry;
+    /// # use slotmapd::*;
+    /// # use slotmapd::sparse_secondary::Entry;
     ///
     /// let mut sm = SlotMap::new();
     /// let mut sec = SparseSecondaryMap::new();
@@ -1275,23 +1126,13 @@ impl<'a, K: Key, V> VacantEntry<'a, K, V> {
     }
 }
 
-// Iterators.
-/// A draining iterator for [`SparseSecondaryMap`].
-///
-/// This iterator is created by [`SparseSecondaryMap::drain`].
-#[derive(Debug)]
-pub struct Drain<'a, K: Key + 'a, V: 'a> {
-    inner: hash_map::Drain<'a, u32, Slot<V>>,
-    _k: PhantomData<fn(K) -> K>,
-}
-
 /// An iterator that moves key-value pairs out of a [`SparseSecondaryMap`].
 ///
 /// This iterator is created by calling the `into_iter` method on [`SparseSecondaryMap`],
 /// provided by the [`IntoIterator`] trait.
 #[derive(Debug)]
 pub struct IntoIter<K: Key, V> {
-    inner: hash_map::IntoIter<u32, Slot<V>>,
+    inner: btree_map::IntoIter<u32, Slot<V>>,
     _k: PhantomData<fn(K) -> K>,
 }
 
@@ -1300,7 +1141,7 @@ pub struct IntoIter<K: Key, V> {
 /// This iterator is created by [`SparseSecondaryMap::iter`].
 #[derive(Debug)]
 pub struct Iter<'a, K: Key + 'a, V: 'a> {
-    inner: hash_map::Iter<'a, u32, Slot<V>>,
+    inner: btree_map::Iter<'a, u32, Slot<V>>,
     _k: PhantomData<fn(K) -> K>,
 }
 
@@ -1318,7 +1159,7 @@ impl<'a, K: 'a + Key, V: 'a> Clone for Iter<'a, K, V> {
 /// This iterator is created by [`SparseSecondaryMap::iter_mut`].
 #[derive(Debug)]
 pub struct IterMut<'a, K: Key + 'a, V: 'a> {
-    inner: hash_map::IterMut<'a, u32, Slot<V>>,
+    inner: btree_map::IterMut<'a, u32, Slot<V>>,
     _k: PhantomData<fn(K) -> K>,
 }
 
@@ -1360,27 +1201,6 @@ impl<'a, K: 'a + Key, V: 'a> Clone for Values<'a, K, V> {
 #[derive(Debug)]
 pub struct ValuesMut<'a, K: Key + 'a, V: 'a> {
     inner: IterMut<'a, K, V>,
-}
-
-impl<'a, K: Key, V> Iterator for Drain<'a, K, V> {
-    type Item = (K, V);
-
-    fn next(&mut self) -> Option<(K, V)> {
-        self.inner.next().map(|(idx, slot)| {
-            let key = KeyData::new(idx, slot.version).into();
-            (key, slot.value)
-        })
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.inner.size_hint()
-    }
-}
-
-impl<'a, K: Key, V> Drop for Drain<'a, K, V> {
-    fn drop(&mut self) {
-        self.for_each(|_drop| {});
-    }
 }
 
 impl<K: Key, V> Iterator for IntoIter<K, V> {
@@ -1464,10 +1284,9 @@ impl<'a, K: Key, V> Iterator for ValuesMut<'a, K, V> {
     }
 }
 
-impl<'a, K, V, S> IntoIterator for &'a SparseSecondaryMap<K, V, S>
+impl<'a, K, V> IntoIterator for &'a SparseSecondaryMap<K, V>
 where
     K: Key,
-    S: hash::BuildHasher,
 {
     type Item = (K, &'a V);
     type IntoIter = Iter<'a, K, V>;
@@ -1477,10 +1296,9 @@ where
     }
 }
 
-impl<'a, K, V, S> IntoIterator for &'a mut SparseSecondaryMap<K, V, S>
+impl<'a, K, V> IntoIterator for &'a mut SparseSecondaryMap<K, V>
 where
     K: Key,
-    S: hash::BuildHasher,
 {
     type Item = (K, &'a mut V);
     type IntoIter = IterMut<'a, K, V>;
@@ -1490,10 +1308,9 @@ where
     }
 }
 
-impl<K, V, S> IntoIterator for SparseSecondaryMap<K, V, S>
+impl<K, V> IntoIterator for SparseSecondaryMap<K, V>
 where
     K: Key,
-    S: hash::BuildHasher,
 {
     type Item = (K, V);
     type IntoIter = IntoIter<K, V>;
@@ -1511,7 +1328,6 @@ impl<'a, K: Key, V> FusedIterator for IterMut<'a, K, V> {}
 impl<'a, K: Key, V> FusedIterator for Keys<'a, K, V> {}
 impl<'a, K: Key, V> FusedIterator for Values<'a, K, V> {}
 impl<'a, K: Key, V> FusedIterator for ValuesMut<'a, K, V> {}
-impl<'a, K: Key, V> FusedIterator for Drain<'a, K, V> {}
 impl<K: Key, V> FusedIterator for IntoIter<K, V> {}
 
 impl<'a, K: Key, V> ExactSizeIterator for Iter<'a, K, V> {}
@@ -1519,61 +1335,11 @@ impl<'a, K: Key, V> ExactSizeIterator for IterMut<'a, K, V> {}
 impl<'a, K: Key, V> ExactSizeIterator for Keys<'a, K, V> {}
 impl<'a, K: Key, V> ExactSizeIterator for Values<'a, K, V> {}
 impl<'a, K: Key, V> ExactSizeIterator for ValuesMut<'a, K, V> {}
-impl<'a, K: Key, V> ExactSizeIterator for Drain<'a, K, V> {}
 impl<K: Key, V> ExactSizeIterator for IntoIter<K, V> {}
-
-// Serialization with serde.
-#[cfg(feature = "serde")]
-mod serialize {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    use super::*;
-    use crate::SecondaryMap;
-
-    impl<K, V, H> Serialize for SparseSecondaryMap<K, V, H>
-    where
-        K: Key,
-        V: Serialize,
-        H: hash::BuildHasher,
-    {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            let mut serde_sec = SecondaryMap::new();
-            for (k, v) in self {
-                serde_sec.insert(k, v);
-            }
-
-            serde_sec.serialize(serializer)
-        }
-    }
-
-    impl<'de, K, V, S> Deserialize<'de> for SparseSecondaryMap<K, V, S>
-    where
-        K: Key,
-        V: Deserialize<'de>,
-        S: hash::BuildHasher + Default,
-    {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            let serde_sec: SecondaryMap<K, V> = Deserialize::deserialize(deserializer)?;
-            let mut sec = Self::default();
-
-            for (k, v) in serde_sec {
-                sec.insert(k, v);
-            }
-
-            Ok(sec)
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::BTreeMap;
 
     use quickcheck::quickcheck;
 
@@ -1581,7 +1347,7 @@ mod tests {
 
     #[test]
     fn custom_hasher() {
-        type FastSparseSecondaryMap<K, V> = SparseSecondaryMap<K, V, fxhash::FxBuildHasher>;
+        type FastSparseSecondaryMap<K, V> = SparseSecondaryMap<K, V>;
         let mut sm = SlotMap::new();
         let mut sec = FastSparseSecondaryMap::default();
         let key1 = sm.insert(42);
@@ -1641,7 +1407,7 @@ mod tests {
 
     quickcheck! {
         fn qc_secmap_equiv_hashmap(operations: Vec<(u8, u32)>) -> bool {
-            let mut hm = HashMap::new();
+            let mut hm = BTreeMap::new();
             let mut hm_keys = Vec::new();
             let mut unique_key = 0u32;
             let mut sm = SlotMap::new();
@@ -1710,6 +1476,77 @@ mod tests {
             secv.sort();
             hmv.sort();
             secv == hmv
+        }
+
+        #[cfg(feature = "serde")]
+        fn qc_slotmap_equiv_no_serde(operations: Vec<(u8, u32)>) -> bool {
+            let mut sm2 = SlotMap::new();
+            let mut sec2 = SparseSecondaryMap::new();
+            let mut sm2_keys = Vec::new();
+            let mut sm = SlotMap::new();
+            let mut sec = SparseSecondaryMap::new();
+            let mut sm_keys = Vec::new();
+
+            let num_ops = 4;
+
+            for (op, val) in operations {
+                match op % num_ops {
+                    // Insert.
+                    0 => {
+                        let k = sm.insert(val);
+                        sec.insert(k, val);
+                        sm_keys.push(k);
+
+                        let k = sm2.insert(val);
+                        sec2.insert(k, val);
+                        sm2_keys.push(k);
+                    }
+
+                    // Delete.
+                    1 => {
+                        if sm2_keys.is_empty() { continue; }
+
+                        let idx = val as usize % sm2_keys.len();
+                        if sec2.remove(sm2_keys[idx]) != sec.remove(sm_keys[idx]) {
+                            return false
+                        }
+                        if sm2.remove(sm2_keys[idx]) != sm.remove(sm_keys[idx]) {
+                            return false;
+                        }
+                    }
+
+                    // Access.
+                    2 => {
+                        if sm2_keys.is_empty() { continue; }
+                        let idx = val as usize % sm2_keys.len();
+                        let (hm_key, sm_key) = (sm2_keys[idx], sm_keys[idx]);
+
+                        if sm2.contains_key(hm_key) != sm.contains_key(sm_key) ||
+                            sm2.get(hm_key) != sm.get(sm_key)
+                        || sec.get(hm_key) != sec2.get(sm_key){
+                            return false;
+                        }
+                    }
+
+                    // Serde round-trip.
+                    #[cfg(feature = "serde")]
+                    3 => {
+                        let ser = serde_json::to_string(&sm).unwrap();
+                        sm = serde_json::from_str(&ser).unwrap();
+
+                        let ser = serde_json::to_string(&sec).unwrap();
+                        sec = serde_json::from_str(&ser).unwrap();
+                    }
+
+                    _ => unreachable!(),
+                }
+            }
+
+            let amv: Vec<_> = sec2.values().collect();
+            let bmv: Vec<_> = sec.values().collect();
+            let cmv: Vec<_> = sm2.values().collect();
+            let dmv: Vec<_> = sm.values().collect();
+            amv == bmv && bmv == cmv && cmv == dmv
         }
     }
 }

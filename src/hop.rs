@@ -30,6 +30,7 @@ use crate::{DefaultKey, Key, KeyData};
 
 // Metadata to maintain the freelist.
 #[derive(Clone, Copy, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 struct FreeListEntry {
     next: u32,
     prev: u32,
@@ -157,7 +158,7 @@ impl<V> HopSlotMap<DefaultKey, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm: HopSlotMap<_, i32> = HopSlotMap::new();
     /// ```
     pub fn new() -> Self {
@@ -172,7 +173,7 @@ impl<V> HopSlotMap<DefaultKey, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm: HopSlotMap<_, i32> = HopSlotMap::with_capacity(10);
     /// ```
     pub fn with_capacity(capacity: usize) -> Self {
@@ -186,7 +187,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// new_key_type! {
     ///     struct PositionKey;
     /// }
@@ -205,7 +206,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// new_key_type! {
     ///     struct MessageKey;
     /// }
@@ -240,7 +241,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::with_capacity(10);
     /// sm.insert("len() counts actual elements, not capacity");
     /// let key = sm.insert("removed elements don't count either");
@@ -256,7 +257,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.insert("dummy");
     /// assert_eq!(sm.is_empty(), false);
@@ -273,7 +274,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let sm: HopSlotMap<_, f64> = HopSlotMap::with_capacity(10);
     /// assert_eq!(sm.capacity(), 10);
     /// ```
@@ -293,7 +294,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// sm.insert("foo");
     /// sm.reserve(32);
@@ -312,7 +313,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// sm.insert("foo");
     /// sm.try_reserve(32).unwrap();
@@ -331,7 +332,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.insert(42);
     /// assert_eq!(sm.contains_key(key), true);
@@ -356,7 +357,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.insert(42);
     /// assert_eq!(sm[key], 42);
@@ -385,7 +386,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.insert_with_key(|k| (k, 20));
     /// assert_eq!(sm[key], (key, 20));
@@ -412,7 +413,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.try_insert_with_key::<_, ()>(|k| Ok((k, 20))).unwrap();
     /// assert_eq!(sm[key], (key, 20));
@@ -557,7 +558,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.insert(42);
     /// assert_eq!(sm.remove(key), Some(42));
@@ -581,7 +582,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     ///
     /// let k1 = sm.insert(0);
@@ -631,7 +632,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// for i in 0..10 {
     ///     sm.insert(i);
@@ -655,7 +656,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let k = sm.insert(0);
     /// let v: Vec<_> = sm.drain().collect();
@@ -674,7 +675,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.insert("bar");
     /// assert_eq!(sm.get(key), Some(&"bar"));
@@ -702,7 +703,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.insert("bar");
     /// assert_eq!(unsafe { sm.get_unchecked(key) }, &"bar");
@@ -719,7 +720,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.insert(3.5);
     /// if let Some(x) = sm.get_mut(key) {
@@ -748,7 +749,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let key = sm.insert("foo");
     /// unsafe { *sm.get_unchecked_mut(key) = "bar" };
@@ -770,7 +771,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let ka = sm.insert("butter");
     /// let kb = sm.insert("apples");
@@ -838,7 +839,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let ka = sm.insert("butter");
     /// let kb = sm.insert("apples");
@@ -866,7 +867,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let k0 = sm.insert(0);
     /// let k1 = sm.insert(1);
@@ -892,7 +893,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = HopSlotMap::new();
     /// let k0 = sm.insert(10);
     /// let k1 = sm.insert(20);
@@ -923,7 +924,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// # use std::collections::HashSet;
     /// let mut sm = HopSlotMap::new();
     /// let k0 = sm.insert(10);
@@ -943,7 +944,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// # use std::collections::HashSet;
     /// let mut sm = HopSlotMap::new();
     /// let k0 = sm.insert(10);
@@ -963,7 +964,7 @@ impl<K: Key, V> HopSlotMap<K, V> {
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// # use std::collections::HashSet;
     /// let mut sm = HopSlotMap::new();
     /// sm.insert(1);
@@ -1343,8 +1344,14 @@ mod serialize {
     use super::*;
 
     #[derive(Serialize, Deserialize)]
+    enum SerdeValue<T> {
+        O(T),
+        F(FreeListEntry),
+    }
+
+    #[derive(Serialize, Deserialize)]
     struct SerdeSlot<T> {
-        value: Option<T>,
+        value: SerdeValue<T>,
         version: u32,
     }
 
@@ -1356,8 +1363,8 @@ mod serialize {
             let serde_slot = SerdeSlot {
                 version: self.version,
                 value: match self.get() {
-                    Occupied(value) => Some(value),
-                    Vacant(_) => None,
+                    Occupied(value) => SerdeValue::O(value),
+                    Vacant(f) => SerdeValue::F(*f),
                 },
             };
             serde_slot.serialize(serializer)
@@ -1374,21 +1381,17 @@ mod serialize {
         {
             let serde_slot: SerdeSlot<T> = Deserialize::deserialize(deserializer)?;
             let occupied = serde_slot.version % 2 == 1;
-            if occupied ^ serde_slot.value.is_some() {
+            if occupied ^ matches!(serde_slot.value, SerdeValue::O(_)) {
                 return Err(de::Error::custom(&"inconsistent occupation in Slot"));
             }
 
             Ok(Self {
                 u: match serde_slot.value {
-                    Some(value) => SlotUnion {
+                    SerdeValue::O(value) => SlotUnion {
                         value: ManuallyDrop::new(value),
                     },
-                    None => SlotUnion {
-                        free: FreeListEntry {
-                            next: 0,
-                            prev: 0,
-                            other_end: 0,
-                        },
+                    SerdeValue::F(free) => SlotUnion {
+                        free,
                     },
                 },
                 version: serde_slot.version,
@@ -1401,7 +1404,7 @@ mod serialize {
         where
             S: Serializer,
         {
-            self.slots.serialize(serializer)
+            (self.num_elems, &self.slots).serialize(serializer)
         }
     }
 
@@ -1410,7 +1413,7 @@ mod serialize {
         where
             D: Deserializer<'de>,
         {
-            let mut slots: Vec<Slot<V>> = Deserialize::deserialize(deserializer)?;
+            let (num_elems, slots): (u32, Vec<Slot<V>>) = Deserialize::deserialize(deserializer)?;
             if slots.len() >= u32::max_value() as usize {
                 return Err(de::Error::custom(&"too many slots"));
             }
@@ -1418,44 +1421,6 @@ mod serialize {
             // Ensure the first slot exists and is empty for the sentinel.
             if slots.get(0).map_or(true, |slot| slot.version % 2 == 1) {
                 return Err(de::Error::custom(&"first slot not empty"));
-            }
-
-            slots[0].u.free = FreeListEntry {
-                next: 0,
-                prev: 0,
-                other_end: 0,
-            };
-
-            // We have our slots, rebuild freelist.
-            let mut num_elems = 0;
-            let mut prev = 0;
-            let mut i = 0;
-            while i < slots.len() {
-                // i is the start of a contiguous block of vacant slots.
-                let front = i;
-                while i < slots.len() && !slots[i].occupied() {
-                    i += 1;
-                }
-                let back = i - 1;
-
-                // Update freelist.
-                unsafe {
-                    slots[back].u.free.other_end = front as u32;
-                    slots[prev].u.free.next = front as u32;
-                    slots[front].u.free = FreeListEntry {
-                        next: 0,
-                        prev: prev as u32,
-                        other_end: back as u32,
-                    };
-                }
-
-                prev = front;
-
-                // Skip occupied slots.
-                while i < slots.len() && slots[i].occupied() {
-                    num_elems += 1;
-                    i += 1;
-                }
             }
 
             Ok(Self {
@@ -1634,6 +1599,69 @@ mod tests {
             let mut hmv: Vec<_> = hm.values().collect();
             smv.sort();
             hmv.sort();
+            smv == hmv
+        }
+
+        #[cfg(feature = "serde")]
+        fn qc_slotmap_equiv_no_serde(operations: Vec<(u8, u32)>) -> bool {
+            let mut sm2 = HopSlotMap::new();
+            let mut sm2_keys = Vec::new();
+            let mut sm = HopSlotMap::new();
+            let mut sm_keys = Vec::new();
+
+            let num_ops = 4;
+
+            for (op, val) in operations {
+                match op % num_ops {
+                    // Insert.
+                    0 => {
+                        sm_keys.push(sm.insert(val));
+                        sm2_keys.push(sm2.insert(val));
+                    }
+
+                    // Delete.
+                    1 => {
+                        // 10% of the time test clear.
+                        if val % 10 == 0 {
+                            let sm2vals: HashSet<_> = sm2.drain().map(|(_, v)| v).collect();
+                            let smvals: HashSet<_> = sm.drain().map(|(_, v)| v).collect();
+                            if sm2vals != smvals {
+                                return false;
+                            }
+                        }
+                        if sm2_keys.is_empty() { continue; }
+
+                        let idx = val as usize % sm2_keys.len();
+                        if sm2.remove(sm2_keys[idx]) != sm.remove(sm_keys[idx]) {
+                            return false;
+                        }
+                    }
+
+                    // Access.
+                    2 => {
+                        if sm2_keys.is_empty() { continue; }
+                        let idx = val as usize % sm2_keys.len();
+                        let (hm_key, sm_key) = (sm2_keys[idx], sm_keys[idx]);
+
+                        if sm2.contains_key(hm_key) != sm.contains_key(sm_key) ||
+                            sm2.get(hm_key) != sm.get(sm_key) {
+                            return false;
+                        }
+                    }
+
+                    // Serde round-trip.
+                    #[cfg(feature = "serde")]
+                    3 => {
+                        let ser = serde_json::to_string(&sm).unwrap();
+                        sm = serde_json::from_str(&ser).unwrap();
+                    }
+
+                    _ => unreachable!(),
+                }
+            }
+
+            let smv: Vec<_> = sm.values().collect();
+            let hmv: Vec<_> = sm2.values().collect();
             smv == hmv
         }
     }

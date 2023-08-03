@@ -1,5 +1,4 @@
-#![doc(html_root_url = "https://docs.rs/slotmap/1.0.6")]
-#![crate_name = "slotmap"]
+#![crate_name = "slotmapd"]
 #![cfg_attr(all(nightly, feature = "unstable"), feature(try_reserve))]
 #![cfg_attr(all(not(test), not(feature = "std")), no_std)]
 #![cfg_attr(all(nightly, doc), feature(doc_cfg))]
@@ -10,7 +9,7 @@
     unused_lifetimes,
     unused_import_braces
 )]
-#![deny(missing_docs, unaligned_references)]
+#![deny(missing_docs)]
 #![cfg_attr(feature = "cargo-clippy", allow(renamed_and_removed_lints))]
 #![cfg_attr(feature = "cargo-clippy", deny(clippy, clippy_pedantic))]
 #![cfg_attr(
@@ -32,7 +31,13 @@
         must_use_candidate
     ))]
 
-//! # slotmap
+//! # Fork
+//!
+//! This is a fork of [orlp/slotmap](https://crates.io/crates/slotmap) where going through a serialization cycle doesn't change observable behavior (such as new key values or iteration order).
+//!
+//! **Please use the original library if you do not need this invariant as this fork will not be as maintained.**
+//!
+//! # slotmap_deterministic
 //!
 //! This library provides a container with persistent unique keys to access
 //! stored values, [`SlotMap`]. Upon insertion a key is returned that can be
@@ -57,7 +62,7 @@
 //! # Examples
 //!
 //! ```
-//! # use slotmap::*;
+//! # use slotmapd::*;
 //! let mut sm = SlotMap::new();
 //! let foo = sm.insert("foo");  // Key generated on insert.
 //! let bar = sm.insert("bar");
@@ -186,7 +191,7 @@
 //! would use:
 //!
 //! ```
-//! # use slotmap::*;
+//! # use slotmapd::*;
 //! # #[derive(Copy, Clone)]
 //! # struct Player;
 //! new_key_type! { struct PlayerKey; }
@@ -367,7 +372,7 @@ pub unsafe trait Key:
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// let mut sm = SlotMap::new();
     /// let k = sm.insert(42);
     /// let nk = DefaultKey::null();
@@ -385,7 +390,7 @@ pub unsafe trait Key:
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// new_key_type! { struct MyKey; }
     /// let a = MyKey::null();
     /// let b = MyKey::default();
@@ -401,7 +406,7 @@ pub unsafe trait Key:
     /// # Examples
     ///
     /// ```
-    /// # use slotmap::*;
+    /// # use slotmapd::*;
     /// new_key_type! { struct MyKey; }
     /// let dk = DefaultKey::null();
     /// let mk = MyKey::null();
@@ -420,8 +425,7 @@ pub unsafe trait Key:
 /// # Examples
 ///
 /// ```
-/// # extern crate slotmap;
-/// # use slotmap::*;
+/// # use slotmapd::*;
 /// new_key_type! {
 ///     // A private key type.
 ///     struct RocketKey;
