@@ -1404,7 +1404,7 @@ mod serialize {
         where
             S: Serializer,
         {
-            (self.num_elems, &self.slots).serialize(serializer)
+            self.slots.serialize(serializer)
         }
     }
 
@@ -1413,7 +1413,7 @@ mod serialize {
         where
             D: Deserializer<'de>,
         {
-            let (num_elems, slots): (u32, Vec<Slot<V>>) = Deserialize::deserialize(deserializer)?;
+            let slots: Vec<Slot<V>> = Deserialize::deserialize(deserializer)?;
             if slots.len() >= u32::max_value() as usize {
                 return Err(de::Error::custom(&"too many slots"));
             }
@@ -1421,6 +1421,59 @@ mod serialize {
             // Ensure the first slot exists and is empty for the sentinel.
             if slots.get(0).map_or(true, |slot| slot.version % 2 == 1) {
                 return Err(de::Error::custom(&"first slot not empty"));
+            }
+
+            let mut n_free: u32 = 0;
+
+            let mut next_block = 0;
+            let mut prev = 0;
+
+            let mut loop_avoid = slots.len();
+
+            // go through block chain, check consistency and count free slots
+            loop {
+                if loop_avoid == 0 {
+                    return Err(de::Error::custom(&"loop in block chain not starting/ending at zero"));
+                }
+                loop_avoid -= 1;
+
+                let fl: FreeListEntry;
+                if let Some(Vacant(f)) = slots.get(next_block as usize).map(Slot::get) {
+                    fl = *f
+                } else {
+                    return Err(de::Error::custom(&"next pointing to non-existent or occupied"));
+                }
+
+                if next_block != 0 && fl.prev != prev {
+                    return Err(de::Error::custom(&"prev not consistent"));
+                }
+                prev = next_block;
+
+                if fl.other_end < next_block {
+                    return Err(de::Error::custom(&"block end before start"));
+                }
+                for i in next_block..=fl.other_end {
+                    if slots.get(i as usize).map_or(true, |s| s.occupied()) {
+                        return Err(de::Error::custom(&"block not free"));
+                    }
+                    n_free += 1;
+                }
+
+                next_block = fl.next;
+                if next_block == 0 {
+                    break
+                }
+            }
+
+            let mut num_elems: u32 = 0;
+            for slot in &slots {
+                if slot.occupied() {
+                    num_elems += 1
+                }
+            }
+
+            if num_elems + n_free != slots.len() as u32 {
+                return Err(de::Error::custom(&"inconsistent occupancy"));
             }
 
             Ok(Self {
@@ -1434,9 +1487,9 @@ mod serialize {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::{HashSet, HashMap};
 
-    use quickcheck::quickcheck;
+    use quickcheck::{quickcheck, TestResult};
 
     use super::*;
 
@@ -1603,7 +1656,7 @@ mod tests {
         }
 
         #[cfg(feature = "serde")]
-        fn qc_slotmap_equiv_no_serde(operations: Vec<(u8, u32)>) -> bool {
+        fn qc_slotmap_equiv_no_serde(operations: Vec<(u8, u32)>) -> TestResult {
             let mut sm2 = HopSlotMap::new();
             let mut sm2_keys = Vec::new();
             let mut sm = HopSlotMap::new();
@@ -1626,14 +1679,14 @@ mod tests {
                             let sm2vals: HashSet<_> = sm2.drain().map(|(_, v)| v).collect();
                             let smvals: HashSet<_> = sm.drain().map(|(_, v)| v).collect();
                             if sm2vals != smvals {
-                                return false;
+                                return TestResult::failed();
                             }
                         }
                         if sm2_keys.is_empty() { continue; }
 
                         let idx = val as usize % sm2_keys.len();
                         if sm2.remove(sm2_keys[idx]) != sm.remove(sm_keys[idx]) {
-                            return false;
+                            return TestResult::failed();
                         }
                     }
 
@@ -1645,7 +1698,7 @@ mod tests {
 
                         if sm2.contains_key(hm_key) != sm.contains_key(sm_key) ||
                             sm2.get(hm_key) != sm.get(sm_key) {
-                            return false;
+                            return TestResult::failed();
                         }
                     }
 
@@ -1653,7 +1706,12 @@ mod tests {
                     #[cfg(feature = "serde")]
                     3 => {
                         let ser = serde_json::to_string(&sm).unwrap();
-                        sm = serde_json::from_str(&ser).unwrap();
+
+                        //sm = serde_json::from_str(&ser).unwrap();
+                        match serde_json::from_str(&ser) {
+                            Ok(x) => sm = x,
+                            Err(e) => return TestResult::error(format!("{} | {}", e, &ser)),
+                        };
                     }
 
                     _ => unreachable!(),
@@ -1662,7 +1720,10 @@ mod tests {
 
             let smv: Vec<_> = sm.values().collect();
             let hmv: Vec<_> = sm2.values().collect();
-            smv == hmv
+            if smv != hmv {
+                return TestResult::error(format!("smv: {:?} hmv: {:?} | l:{} s:{:?}", smv, hmv, sm.num_elems, sm.slots));
+            }
+            TestResult::passed()
         }
     }
 
@@ -1683,7 +1744,7 @@ mod tests {
         let third = sm.insert((second, 0));
         sm[first].0 = third;
 
-        let ser = serde_json::to_string(&sm).unwrap();
+        let ser = serde_json::to_string_pretty(&sm).unwrap();
         let de: HopSlotMap<DefaultKey, (DefaultKey, i32)> = serde_json::from_str(&ser).unwrap();
         assert_eq!(de.len(), sm.len());
 
@@ -1698,15 +1759,18 @@ mod tests {
     #[test]
     fn slotmap_serde_freelist() {
         let mut sm = HopSlotMap::new();
-        let k = sm.insert(5i32);
+        let k = sm.insert(0i32);
+        let k2 = sm.insert(0i32);
+        sm.insert(0i32);
+        sm.remove(k2);
         sm.remove(k);
 
-        let ser = serde_json::to_string(&sm).unwrap();
+        let ser = serde_json::to_string_pretty(&sm).unwrap();
         let mut de: HopSlotMap<DefaultKey, i32> = serde_json::from_str(&ser).unwrap();
 
         de.insert(0);
         de.insert(1);
         de.insert(2);
-        assert_eq!(de.len(), 3);
+        assert_eq!(de.len(), 4);
     }
 }

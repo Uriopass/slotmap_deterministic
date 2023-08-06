@@ -33,7 +33,7 @@ struct Slot {
 ///
 /// See [crate documentation](crate) for more details.
 #[derive(Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct DenseSlotMap<K: Key, V> {
     keys: Vec<K>,
     values: Vec<V>,
@@ -1069,6 +1069,94 @@ impl<K: Key, V> IntoIterator for DenseSlotMap<K, V> {
         IntoIter {
             inner_keys: self.keys.into_iter(),
             inner_values: self.values.into_iter(),
+        }
+    }
+}
+
+
+// Serialization with serde.
+#[cfg(feature = "serde")]
+mod serialize {
+    use serde::{de, Deserialize, Deserializer};
+    use super::*;
+
+    #[derive(Deserialize)]
+    struct UnvalidatedDenseSlotMap<K: Key, V> {
+        keys: Vec<K>,
+        values: Vec<V>,
+        slots: Vec<Slot>,
+        free_head: u32,
+    }
+
+    impl<'de, K, V> Deserialize<'de> for DenseSlotMap<K, V>
+        where
+            K: Key + Deserialize<'de>,
+            V: Deserialize<'de>,
+    {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+        {
+            let mut uv: UnvalidatedDenseSlotMap<K, V> = Deserialize::deserialize(deserializer)?;
+            if uv.slots.len() >= u32::MAX as usize || uv.keys.len() >= u32::MAX as usize || uv.values.len() >= u32::MAX as usize {
+                return Err(de::Error::custom(&"too many slots"));
+            }
+
+            // Ensure the first slot exists and is empty for the sentinel.
+            if uv.slots.get(0).map_or(true, |slot: &Slot| slot.version % 2 == 1) {
+                return Err(de::Error::custom(&"first slot not empty"));
+            }
+
+            uv.slots[0].version = 0;
+            uv.slots[0].idx_or_free = 0;
+
+            let mut i = uv.free_head;
+            let mut n_free = 0;
+
+            let mut loop_avoid = uv.slots.len();
+
+            while (1..uv.slots.len()).contains(&(i as usize)) {
+                if loop_avoid == 0 {
+                    return Err(de::Error::custom(&"loop in free list"));
+                }
+                loop_avoid -= 1;
+                n_free += 1;
+
+                let s = unsafe { uv.slots.get_unchecked(i as usize) };
+                if s.version % 2 == 1 {
+                    return Err(de::Error::custom(&"occupied slot in free list"));
+                }
+                i = s.idx_or_free;
+            }
+
+            let mut num_elems = 0;
+            for slot in &uv.slots[1..] {
+                if slot.version % 2 == 1 {
+                    num_elems += 1;
+                    if slot.idx_or_free >= uv.keys.len() as u32 {
+                        return Err(de::Error::custom(&"slot idx out of bounds"));
+                    }
+                }
+            }
+
+            if (num_elems + n_free + 1) as usize != uv.slots.len() {
+                return Err(de::Error::custom(&"inconsistent occupancy"));
+            }
+
+            if uv.keys.len() != uv.values.len() {
+                return Err(de::Error::custom(&"keys and values have different lengths"));
+            }
+
+            if uv.values.len() != num_elems as usize {
+                return Err(de::Error::custom(&"occupied slots and values have different lengths"));
+            }
+
+            Ok(Self {
+                keys: uv.keys,
+                values: uv.values,
+                slots: uv.slots,
+                free_head: uv.free_head,
+            })
         }
     }
 }

@@ -1282,7 +1282,7 @@ mod serialize {
         where
             S: Serializer,
         {
-            (self.num_elems, self.free_head, &self.slots).serialize(serializer)
+            (self.free_head, &self.slots).serialize(serializer)
         }
     }
 
@@ -1295,7 +1295,7 @@ mod serialize {
         where
             D: Deserializer<'de>,
         {
-            let (num_elems, free_head, slots): (u32, u32, Vec<Slot<V>>) = Deserialize::deserialize(deserializer)?;
+            let (free_head, mut slots): (u32, Vec<Slot<V>>) = Deserialize::deserialize(deserializer)?;
             if slots.len() >= u32::max_value() as usize {
                 return Err(de::Error::custom(&"too many slots"));
             }
@@ -1303,6 +1303,39 @@ mod serialize {
             // Ensure the first slot exists and is empty for the sentinel.
             if slots.get(0).map_or(true, |slot| slot.version % 2 == 1) {
                 return Err(de::Error::custom(&"first slot not empty"));
+            }
+
+            slots[0].version = 0;
+            slots[0].u.next_free = 0;
+
+            let mut i = free_head;
+            let mut n_free = 0;
+
+            let mut loop_avoid = slots.len();
+
+            while (1..slots.len()).contains(&(i as usize)) {
+                if loop_avoid == 0 {
+                    return Err(de::Error::custom(&"loop in free list"));
+                }
+                loop_avoid -= 1;
+                n_free += 1;
+
+                let s = unsafe { slots.get_unchecked(i as usize) };
+                if s.occupied() {
+                    return Err(de::Error::custom(&"occupied slot in free list"));
+                }
+                unsafe { i = s.u.next_free; }
+            }
+
+            let mut num_elems: u32 = 0;
+            for slot in &slots[1..] {
+                if slot.occupied() {
+                    num_elems += 1;
+                }
+            }
+
+            if (num_elems + n_free + 1) as usize != slots.len() {
+                return Err(de::Error::custom(&"inconsistent occupancy"));
             }
 
             Ok(Self {
