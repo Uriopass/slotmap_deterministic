@@ -1,3 +1,8 @@
+Version 1.0.10
+=============
+
+- Fixed unsoudness when deserializing
+
 Version 1.0.9
 =============
 
