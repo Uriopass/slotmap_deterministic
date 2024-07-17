@@ -1520,7 +1520,8 @@ mod tests {
 
 
         #[cfg(feature = "serde")]
-        fn qc_slotmap_equiv_no_serde(operations: Vec<(u8, u32)>) -> bool {
+        fn qc_slotmap_equiv_no_serde(operations: Vec<(u8, u32)>) -> quickcheck::TestResult {
+            use quickcheck::TestResult;
             let mut sm2 = SlotMap::new();
             let mut sm2_keys = Vec::new();
             let mut sm = SlotMap::new();
@@ -1543,14 +1544,14 @@ mod tests {
                             let sm2vals: HashSet<_> = sm2.drain().map(|(_, v)| v).collect();
                             let smvals: HashSet<_> = sm.drain().map(|(_, v)| v).collect();
                             if sm2vals != smvals {
-                                return false;
+                                TestResult::failed();
                             }
                         }
                         if sm2_keys.is_empty() { continue; }
 
                         let idx = val as usize % sm2_keys.len();
                         if sm2.remove(sm2_keys[idx]) != sm.remove(sm_keys[idx]) {
-                            return false;
+                            TestResult::failed();
                         }
                     }
 
@@ -1562,7 +1563,7 @@ mod tests {
 
                         if sm2.contains_key(hm_key) != sm.contains_key(sm_key) ||
                            sm2.get(hm_key) != sm.get(sm_key) {
-                            return false;
+                            TestResult::failed();
                         }
                     }
 
@@ -1577,9 +1578,31 @@ mod tests {
                 }
             }
 
-            let smv: Vec<_> = sm.values().collect();
-            let hmv: Vec<_> = sm2.values().collect();
-            smv == hmv
+            if sm.slots.len() != sm2.slots.len() {
+                return TestResult::error(format!("slot count differ {} vs {}", sm.slots.len(), sm2.slots.len()));
+            }
+
+            for (i, (slota, slotb)) in sm.slots.iter().zip(sm2.slots.iter()).enumerate() {
+                if slota.version != slotb.version {
+                    return TestResult::error(format!("slots differ in version {} vs {}", slota.version, slotb.version));
+                }
+                match slota.version % 2 {
+                    0 => unsafe {
+                        if slota.u.next_free != slotb.u.next_free {
+                            return TestResult::error(format!("slots differ in next_free {:?} vs {:?} at idx {}", slota.u.next_free, slotb.u.next_free, i));
+                        }
+                    }
+                    1 => unsafe {
+                        if slota.u.value != slotb.u.value {
+                            return TestResult::error(format!("slots differ in value {:?} vs {:?} at idx {}", slota.u.value, slotb.u.value, i));
+                        }
+                        continue
+                    }
+                    _ => unreachable!(),
+                }
+            }
+
+            TestResult::passed()
         }
     }
 

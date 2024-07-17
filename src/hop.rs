@@ -1499,7 +1499,7 @@ mod serialize {
 mod tests {
     use std::collections::{HashSet, HashMap};
 
-    use quickcheck::{quickcheck, TestResult};
+    use quickcheck::quickcheck;
 
     use super::*;
 
@@ -1666,7 +1666,8 @@ mod tests {
         }
 
         #[cfg(feature = "serde")]
-        fn qc_slotmap_equiv_no_serde(operations: Vec<(u8, u32)>) -> TestResult {
+        fn qc_slotmap_equiv_no_serde(operations: Vec<(u8, u32)>) -> quickcheck::TestResult {
+            use quickcheck::TestResult;
             let mut sm2 = HopSlotMap::new();
             let mut sm2_keys = Vec::new();
             let mut sm = HopSlotMap::new();
