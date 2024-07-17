@@ -1,6 +1,6 @@
 [package]
 name = "slotmapd"
-version = "1.0.10"  # Remember to grep and update version everywhere.
+version = "1.0.11"
 edition = "2021"
 authors = ["Orson Peters <orsonpeters@gmail.com>", "Paris Douady <paris.douady@hotmail.fr>"]
 description = "orlp/slotmap fork where serialization cycle doesn't change observable behavior"
