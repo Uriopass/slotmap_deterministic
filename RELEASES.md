@@ -1,3 +1,8 @@
+Version 1.0.11
+=============
+
+- Ensure binary equality when serializing HopSlotMap
+
 Version 1.0.10
 =============
 
