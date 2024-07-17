@@ -528,7 +528,11 @@ impl<K: Key, V> HopSlotMap<K, V> {
             (true, false) => {
                 // Append to vacant block on left.
                 let front = self.freelist(i - 1).other_end;
-                self.freelist(i).other_end = front;
+                *self.freelist(i) = FreeListEntry {
+                    next: 0,
+                    prev: 0,
+                    other_end: front,
+                };
                 self.freelist(front).other_end = i;
             },
 
@@ -544,6 +548,12 @@ impl<K: Key, V> HopSlotMap<K, V> {
                 let back = right.other_end;
                 self.freelist(front).other_end = back;
                 self.freelist(back).other_end = front;
+
+                *self.freelist(i) = FreeListEntry {
+                    next: 0,
+                    prev: 0,
+                    other_end: 0,
+                };
             },
         }
 
@@ -1718,11 +1728,32 @@ mod tests {
                 }
             }
 
-            let smv: Vec<_> = sm.values().collect();
-            let hmv: Vec<_> = sm2.values().collect();
-            if smv != hmv {
-                return TestResult::error(format!("smv: {:?} hmv: {:?} | l:{} s:{:?}", smv, hmv, sm.num_elems, sm.slots));
+            if sm.slots.len() != sm2.slots.len() {
+                return TestResult::error(format!("slot count differ {} vs {}", sm.slots.len(), sm2.slots.len()));
             }
+
+            for (i, (slota, slotb)) in sm.slots.iter().zip(sm2.slots.iter()).enumerate() {
+                if slota.version != slotb.version {
+                    return TestResult::error(format!("slots differ in version {} vs {}", slota.version, slotb.version));
+                }
+                match slota.version % 2 {
+                    0 => unsafe {
+                        let fa = slota.u.free;
+                        let fb = slotb.u.free;
+                        if (fa.next, fa.other_end, fa.prev) != (fb.next, fb.other_end, fb.prev) {
+                            return TestResult::error(format!("slots differ in free list {:?} vs {:?} at idx {}", fa, fb, i));
+                        }
+                    }
+                    1 => unsafe {
+                        if slota.u.value != slotb.u.value {
+                            return TestResult::error(format!("slots differ in value {:?} vs {:?} at idx {}", slota.u.value, slotb.u.value, i));
+                        }
+                        continue
+                    }
+                    _ => unreachable!(),
+                }
+            }
+
             TestResult::passed()
         }
     }
